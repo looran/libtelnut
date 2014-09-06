@@ -38,8 +38,6 @@ main(void)
 
 	evb = event_base_new();
 
-	//tel = telnut_new(evb, "127.0.0.1", 23, "user", "password", TELNUT_NORECONNECT, TELNUT_NOVERBOSE,
-	// 	_cb_connect, _cb_disconnect, NULL);
 	tel = telnut_new(evb, "127.0.0.1", 23, "user", "password", TELNUT_NORECONNECT, TELNUT_NOVERBOSE,
 	 	_cb_connect, _cb_disconnect, NULL);
 	event_base_dispatch(evb);
