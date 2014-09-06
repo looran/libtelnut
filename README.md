@@ -1,5 +1,5 @@
-libtelnut - telnet utility library
-==================================
+libtelnut - telnet async client library
+=======================================
 
 ### Example: execute a command via Telnet
 
