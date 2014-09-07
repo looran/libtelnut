@@ -398,8 +398,8 @@ _cb_telnet_event(telnet_t *telnet, telnet_event_t *ev, void *user_data)
 		break;
 	/* error */
 	case TELNET_EV_ERROR:
-		fprintf(stderr, "ERROR: %s\n", ev->error.msg);
-		exit(1);
+		_error(tel, TELNUT_ERROR_TELNETPROTO);
+		break;
 	default:
 		/* ignore */
 		break;
