@@ -421,7 +421,7 @@ _recvbuf(struct telnut *tel)
 	len = evbuffer_get_length(tel->conn.telnetbuf_in);
 	LOG_VERBOSE("_recvbuf: len=%d lastrecv_tick=%d\n", len, tel->recvbuf.lastrecv_ticks);
 	if (len <= 0) {
-		if (tel->recvbuf.lastrecv_ticks > 30)
+		if (tel->recvbuf.lastrecv_ticks > 4)
 			return 0;
 		else if (evbuffer_get_length(tel->recvbuf.in) > 0)
 			tel->recvbuf.lastrecv_ticks++;
