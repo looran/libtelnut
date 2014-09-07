@@ -88,8 +88,6 @@ struct telnut {
 	union {
 		struct {
 			char *cmd;
-			struct evbuffer *output;
-			int lastrecv_tick;
 			void (*cbusr_done)(struct telnut *, enum telnut_error, char *, char *, int, void *);
 		} exec;
 		struct {
@@ -104,6 +102,11 @@ struct telnut {
 		} push;
 	} act;
 	void *act_cbusr_arg;
+	struct {
+		struct evbuffer *in;
+		int lastrecv_ticks;
+		int total_ticks;
+	} recvbuf;
 };
 
 /* telnut.c */
