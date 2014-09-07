@@ -83,6 +83,7 @@ See [telnut.h](telnut.h)
 Telnet clients automated login:
 * https://github.com/robotframework/robotframework/blob/master/src/robot/libraries/Telnet.py
 * http://robotframework.googlecode.com/hg/doc/libraries/Telnet.html
+* http://packetstorm.igor.onlinedirect.bg/UNIX/scanners/TelnetScanner.cs.txt
 
 Telnet password bruteforce:
 * http://www.hsc.fr/ressources/outils/patator/download/patator_v0.6.py
