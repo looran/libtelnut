@@ -187,8 +187,8 @@ struct tfp_console {
 
 struct tfp_creds {
 	char *console_name; /* reference to tfp_console.name, or NULL for generic */
-	char *usernames; /* list comma separated */
-	char *passwords; /* list comma separated */
+	char *usernames;    /* list comma separated */
+	char *passwords;    /* list comma separated */
 };
 
 /* telnut.c */
@@ -196,10 +196,10 @@ struct tfp_creds {
 struct telnut *telnut_new(struct event_base *evb, char *ip, int port, char *user, char *pass, enum telnut_reconnect reconnect, int verbose,
 	void (*cbusr_connect)(struct telnut *, void *),
 	void (*cbusr_disconnect)(struct telnut *, enum telnut_error, void *), void *arg);
-void telnut_free(struct telnut *tel);
+void           telnut_free(struct telnut *tel);
 
-int telnut_connect(struct telnut *tel);
-int telnut_disconnect(struct telnut *tel);
+int  telnut_connect(struct telnut *tel);
+int  telnut_disconnect(struct telnut *tel);
 void telnut_err_print(enum telnut_error error);
 
 int telnut_exec(struct telnut *tel, char *cmd, 
