@@ -9,8 +9,8 @@ LIBDIR=$(PREFIX)/lib
 LIBNAME=libtelnut
 
 TARGET  = ${LIBNAME}.so
-SOURCES = libtelnut.c tfp.c
-HEADERS = libtelnut.h
+SOURCES = telnut.c tfp.c
+HEADERS = telnut.h
 OBJECTS = $(SOURCES:.c=.o)
 
 all: $(TARGET)
