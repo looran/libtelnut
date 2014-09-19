@@ -71,8 +71,9 @@ tfp_getaction(struct tfp *tfp, char *recv, int recv_len, const char **cmd, int *
 		action = _login(tfp, cmd, cmdlen);
 		break;
 	case TFP_STATE_CONSOLE:
-		if (!tfp->learn.login_console)
-			tfp->learn.login_console = strndup(recv, recv_len);
+		if (tfp->learn.login_console)
+			free(tfp->learn.login_console);
+		tfp->learn.login_console = strndup(recv, recv_len);
 		action = _console(tfp, cmd, cmdlen);
 		break;
 	case TFP_STATE_CHECK_SHELL:
