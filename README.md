@@ -68,9 +68,8 @@ make && sudo make install
 
 ### Dependencies
 
-* libtelnet
+* [libtelnet](https://github.com/seanmiddleditch/libtelnet)
 * libevent
-* libbsd (only at compile time for queue.h)
 
 ### API
 

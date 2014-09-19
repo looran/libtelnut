@@ -17,7 +17,7 @@
 #include <stdio.h>
 #include <sys/stat.h>
 #include <stdlib.h>
-#include <bsd/sys/queue.h>
+#include <sys/queue.h>
 
 #include <libtelnet.h>
 
