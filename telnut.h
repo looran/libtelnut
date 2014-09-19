@@ -34,13 +34,10 @@ enum telnut_reconnect {
 
 enum telnut_state {
 	TELNUT_STATE_UNINITIALIZED = 0,
-	TELNUT_STATE_CONNECTING,
 	TELNUT_STATE_DISCONNECTED,
-	TELNUT_STATE_LOGIN_ENTERLOGIN,
-	TELNUT_STATE_LOGIN_ENTERPASS,
-	TELNUT_STATE_LOGIN_WAITPROMPT,
+	TELNUT_STATE_CONNECTING,
 	TELNUT_STATE_CONNECTED,
-	TELNUT_STATE_EXEC_WAITANSWER,
+	TELNUT_STATE_ACTION_WAITANSWER,
 };
 
 enum telnut_error {
@@ -48,13 +45,29 @@ enum telnut_error {
 	TELNUT_ERROR_UNKNOWN_STATE,
 	TELNUT_ERROR_CONNECTION,
 	TELNUT_ERROR_CONNECTION_CLOSED,
-	TELNUT_ERROR_TELNETPROTO,
 	TELNUT_ERROR_LOGIN,
+	TELNUT_ERROR_SHELL,
+	TELNUT_ERROR_TELNETPROTO,
 };
 
 enum telnut_action {
 	TELNUT_NOACTION = 0,
 	TELNUT_ACTION_EXEC = 1,
+};
+
+enum tfp_state {
+	TFP_STATE_LOGIN_USER = 0,
+	TFP_STATE_LOGIN_PASS,
+	TFP_STATE_CONSOLE,
+	TFP_STATE_CHECK_SHELL,
+	TFP_STATE_SHELL,
+};
+
+enum tfp_action {
+	TFP_SEND = 0,
+	TFP_WAIT,
+	TFP_HAS_SHELL,
+	TFP_ERROR,
 };
 
 struct telnut {
@@ -74,14 +87,12 @@ struct telnut {
 	} conf;
 	struct {
 		telnet_t *telnet;
-		struct bufferevent *bufev;
 		struct evbuffer *telnetbuf_in; /* buffer after libtelnet receive handling */
+		struct tfp *tfp;
+		struct bufferevent *bufev;
+		int echosuppress_count;
+		int wait_count;
 	} conn;
-	struct {
-		char *login_userprompt;
-		char *login_passprompt;
-		char *shell_prompt;
-	} learn;
 	void (*cbusr_connect)(struct telnut *, void *);
 	void (*cbusr_disconnect)(struct telnut *, enum telnut_error, void *);
 	void *cbusr_arg;
@@ -106,7 +117,78 @@ struct telnut {
 		struct evbuffer *in;
 		int lastrecv_ticks;
 		int total_ticks;
+		int max_ticks;
 	} recvbuf;
+	struct {
+		struct evbuffer *out;
+		struct event    *ev_send;
+		struct timeval   tv_send;
+	} senddefer;
+};
+
+struct tfp {
+	enum tfp_state state;
+	struct {
+		char *user;
+		char *pass;
+	} conf;
+	struct {
+		char *login_user;
+		char *login_pass;
+		char *login_console;
+		char *shell_prompt;
+	} learn;
+	struct tfp_login  *login;
+	struct tfp_console *console;
+	int                 console_count;
+};
+
+struct tfp_login {
+	char *name;
+	struct {
+		char *user;
+		int   cflags;
+	} user;
+	struct {
+		char *pass;
+		int   cflags;
+	} pass;
+};
+
+struct tfp_login_failed {
+	struct {
+		char *pass;
+		int   cflags;
+	} pass;
+	struct {
+		char *console;
+		int   cflags;
+	} console;
+};
+
+struct tfp_console {
+	char *name;
+	struct {
+		char *user;
+		int   user_cflags;
+		char *pass;
+		int   pass_cflags;
+		char *console;
+		int   console_cflags;
+	} login;
+	struct {
+		char *cmd;
+	} getshell;
+	struct {
+		char *shell;
+		int   shell_cflags;
+	} fpshell;
+};
+
+struct tfp_creds {
+	char *console_name; /* reference to tfp_console.name, or NULL for generic */
+	char *usernames; /* list comma separated */
+	char *passwords; /* list comma separated */
 };
 
 /* telnut.c */
@@ -127,3 +209,10 @@ int telnut_push(struct telnut *tel, char *path_local, char *path_remote,
 /*int telnut_pull(struct telnut *tel, char *path_remote, char *path_local, int flags,
 	void (*cb)(struct telnut *, int, void *), void *arg);*/
 void telnut_action_stop(struct telnut *tel);
+
+/* tfp.c */
+
+struct tfp     *tfp_new(char *user, char *pass);
+void            tfp_free(struct tfp *tfp);
+enum tfp_action tfp_getaction(struct tfp *tfp, char *recv, int recv_len, const char **cmd, int *cmdlen);
+const char     *tfp_str(struct tfp *tfp);

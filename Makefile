@@ -1,4 +1,7 @@
 CFLAGS += -Wall -fPIC
+ifdef TFP_DATA_EXTERNAL_H
+	CFLAGS += -DTFP_DATA_EXTERNAL_H
+endif
 
 PREFIX=/usr/local
 INCLUDEDIR=$(PREFIX)/include
@@ -6,7 +9,7 @@ LIBDIR=$(PREFIX)/lib
 LIBNAME=libtelnut
 
 TARGET  = ${LIBNAME}.so
-SOURCES = telnut.c
+SOURCES = telnut.c tfp.c
 HEADERS = telnut.h
 OBJECTS = $(SOURCES:.c=.o)
 

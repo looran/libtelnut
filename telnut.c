@@ -14,10 +14,12 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <unistd.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <errno.h>
 
 #include <event2/bufferevent.h>
 #include <event2/buffer.h>
@@ -25,11 +27,15 @@
 
 #include "telnut.h"
 
-#define LOG_VERBOSE(parg, ...) do { if (tel->conf.verbose) { printf("sshut:" parg, ##__VA_ARGS__); } }while(0);
+#define LOG_VERBOSE(parg, ...) do { if (tel->conf.verbose) { printf("telnut: " parg, ##__VA_ARGS__); } }while(0);
 
 static const telnet_telopt_t _telopts[] = {
-	{ TELNET_TELOPT_ECHO,		TELNET_WONT, TELNET_DO   },
+	{ TELNET_TELOPT_SGA,		TELNET_WONT, TELNET_DO   },
 	{ TELNET_TELOPT_TTYPE,		TELNET_WILL, TELNET_DONT },
+	{ TELNET_TELOPT_NEW_ENVIRON,	TELNET_WILL, TELNET_DONT },
+	{ TELNET_TELOPT_STATUS,		TELNET_WONT, TELNET_DO   },
+	{ TELNET_TELOPT_XDISPLOC,	TELNET_WILL, TELNET_DONT },
+	{ TELNET_TELOPT_ECHO,		TELNET_WONT, TELNET_DONT },
 	{ TELNET_TELOPT_COMPRESS2,	TELNET_WONT, TELNET_DO   },
 	{ TELNET_TELOPT_MSSP,		TELNET_WONT, TELNET_DO   },
 	{ -1, 0, 0 }
@@ -37,20 +43,21 @@ static const telnet_telopt_t _telopts[] = {
 
 static void _state(struct telnut *);
 static void _state_next(struct telnut *, enum telnut_state);
-static int  _s_login_enterlogin(struct telnut *);
-static int  _s_login_enterpass(struct telnut *);
-static int  _s_login_waitprompt(struct telnut *);
+static int  _s_connecting(struct telnut *);
 static int  _s_connected(struct telnut *);
-static int  _s_exec_waitanswer(struct telnut *);
+static int  _s_action_waitanswer(struct telnut *);
 static void _error(struct telnut *, enum telnut_error);
 static void _wait(struct telnut *, float);
-static void _send(struct telnut *, char *, size_t, int);
+static void _send(struct telnut *, const char *, size_t, int);
 static void _cb_wait(int, short, void *);
 static void _cb_sock_read(struct bufferevent *, void *);
 static void _cb_sock_event(struct bufferevent *, short, void *);
 static void _cb_telnet_event(telnet_t *, telnet_event_t *, void *);
 static void _recvbuf_init(struct telnut *);
 static int  _recvbuf(struct telnut *tel);
+static void _send_sock_defer(struct telnut *, const char *, size_t);
+static void _senddefer_schedule(struct telnut *);
+static void _cb_senddefer(int, short, void *);
 
 struct telnut *
 telnut_new(struct event_base *evb, char *ip, int port, char *user, char *pass, enum telnut_reconnect reconnect, int verbose,
@@ -83,6 +90,7 @@ telnut_free(struct telnut *tel)
 	free(tel->conf.ip);
 	free(tel->conf.user);
 	free(tel->conf.pass);
+	event_free(tel->ev_wait);
 	free(tel);
 }
 
@@ -92,8 +100,6 @@ telnut_connect(struct telnut *tel)
 	unsigned long hostaddr;
 	struct sockaddr_in sin;
 	
-	tel->state = TELNUT_STATE_CONNECTING;
-
 	hostaddr = inet_addr(tel->conf.ip);
 	sin.sin_family = AF_INET;
 	sin.sin_port = htons(tel->conf.port);
@@ -101,6 +107,10 @@ telnut_connect(struct telnut *tel)
 
 	tel->conn.telnet = telnet_init(_telopts, _cb_telnet_event, 0, tel);
 	tel->conn.telnetbuf_in = evbuffer_new();
+	tel->conn.tfp = tfp_new(tel->conf.user, tel->conf.pass);
+
+	tel->senddefer.out = evbuffer_new();
+	tel->senddefer.ev_send = evtimer_new(tel->evb, _cb_senddefer, tel);
 
 	tel->conn.bufev = bufferevent_socket_new(tel->evb, -1, BEV_OPT_CLOSE_ON_FREE);
 	bufferevent_setcb(tel->conn.bufev, _cb_sock_read, NULL, _cb_sock_event, tel);
@@ -109,19 +119,29 @@ telnut_connect(struct telnut *tel)
 		_error(tel, TELNUT_ERROR_CONNECTION_CLOSED);
 		return -1;
 	}
+	tel->conn.wait_count = 0;
+	_state_next(tel, TELNUT_STATE_CONNECTING);
 
-	_state_next(tel, TELNUT_STATE_LOGIN_ENTERLOGIN);
 	return 0;
 }
 
 int
 telnut_disconnect(struct telnut *tel)
 {
+	if (tel->state <= TELNUT_STATE_DISCONNECTED)
+		return -1;
 	LOG_VERBOSE("telnut_disconnect\n");
+
 	bufferevent_free(tel->conn.bufev);
+
+	event_free(tel->senddefer.ev_send);
+	evbuffer_free(tel->senddefer.out);
+
+	tfp_free(tel->conn.tfp);
 	telnet_free(tel->conn.telnet);
 	evbuffer_free(tel->conn.telnetbuf_in);
-	event_del(tel->ev_wait);
+
+	tel->state = TELNUT_STATE_DISCONNECTED;
 	tel->cbusr_disconnect(tel, tel->error, tel->cbusr_arg);
 	return 0;
 }
@@ -141,7 +161,7 @@ telnut_exec(struct telnut *tel, char *cmd,
 	tel->act.exec.cbusr_done = cbusr_done;
 	tel->act_cbusr_arg = cbusr_arg;
 	_send(tel, tel->act.exec.cmd, strlen(cmd), 1);
-	_state_next(tel, TELNUT_STATE_EXEC_WAITANSWER);
+	_state_next(tel, TELNUT_STATE_ACTION_WAITANSWER);
 	return 0;
 }
 
@@ -154,7 +174,7 @@ telnut_action_stop(struct telnut *tel)
 	case TELNUT_ACTION_EXEC:
 		free(tel->act.exec.cmd);
 		tel->act.exec.cbusr_done = NULL;
-		// XXX if we where TELNUT_STATE_EXEC_WAITANSWER, need to ignore cmd result receive
+		// XXX if we where TELNUT_STATE_ACTION_WAITANSWER, need to ignore cmd result receive
 		break;
 	}
 	tel->action = TELNUT_NOACTION;
@@ -171,12 +191,9 @@ _state(struct telnut *tel)
 	switch(tel->state) {
 	case TELNUT_STATE_UNINITIALIZED: _error(tel, TELNUT_ERROR_UNKNOWN_STATE); break;
 	case TELNUT_STATE_DISCONNECTED: _error(tel, TELNUT_ERROR_UNKNOWN_STATE); break;
-	case TELNUT_STATE_CONNECTING: _error(tel, TELNUT_ERROR_UNKNOWN_STATE); break;
-	case TELNUT_STATE_LOGIN_ENTERLOGIN: rc=_s_login_enterlogin(tel); break;
-	case TELNUT_STATE_LOGIN_ENTERPASS: rc=_s_login_enterpass(tel); break;
-	case TELNUT_STATE_LOGIN_WAITPROMPT: rc=_s_login_waitprompt(tel); break;
+	case TELNUT_STATE_CONNECTING: rc=_s_connecting(tel); break;
 	case TELNUT_STATE_CONNECTED: rc=_s_connected(tel); break;
-	case TELNUT_STATE_EXEC_WAITANSWER: rc=_s_exec_waitanswer(tel); break;
+	case TELNUT_STATE_ACTION_WAITANSWER: rc=_s_action_waitanswer(tel); break;
 	}
 	if (rc == -1)
 		_state_next(tel, tel->state);
@@ -199,13 +216,10 @@ _state_next(struct telnut *tel, enum telnut_state state)
 	switch(state) {
 	case TELNUT_STATE_UNINITIALIZED:
 	case TELNUT_STATE_DISCONNECTED:
-	case TELNUT_STATE_CONNECTING:
 		_error(tel, TELNUT_ERROR_UNKNOWN_STATE); break;
 		break;
-	case TELNUT_STATE_LOGIN_ENTERLOGIN:
-	case TELNUT_STATE_LOGIN_ENTERPASS:
-	case TELNUT_STATE_LOGIN_WAITPROMPT:
-	case TELNUT_STATE_EXEC_WAITANSWER:
+	case TELNUT_STATE_CONNECTING:
+	case TELNUT_STATE_ACTION_WAITANSWER:
 		if (statechange)
 			_recvbuf_init(tel);
 		_wait(tel, 0.2);
@@ -217,36 +231,36 @@ _state_next(struct telnut *tel, enum telnut_state state)
 }
 
 static int
-_s_login_enterlogin(struct telnut *tel)
+_s_connecting(struct telnut *tel)
 {
-	if (!_recvbuf(tel)) {
-		tel->learn.login_userprompt = strndup((char *)evbuffer_pullup(tel->recvbuf.in, -1),
-							(int)evbuffer_get_length(tel->recvbuf.in));
-		_send(tel, tel->conf.user, strlen(tel->conf.user), 1);
-		return TELNUT_STATE_LOGIN_ENTERPASS;
-	}
-	return -1;
-}
+	enum tfp_action action;
+	const char *cmd;
+	int cmdlen;
 
-static int
-_s_login_enterpass(struct telnut *tel)
-{
 	if (!_recvbuf(tel)) {
-		tel->learn.login_passprompt = strndup((char *)evbuffer_pullup(tel->recvbuf.in, -1),
-							(int)evbuffer_get_length(tel->recvbuf.in));
-		_send(tel, tel->conf.pass, strlen(tel->conf.pass), 1);
-		return TELNUT_STATE_LOGIN_WAITPROMPT;
-	}
-	return -1;
-}
-
-static int
-_s_login_waitprompt(struct telnut *tel)
-{
-	if (!_recvbuf(tel)) {
-		tel->learn.shell_prompt = strndup((char *)evbuffer_pullup(tel->recvbuf.in, -1),
-							(int)evbuffer_get_length(tel->recvbuf.in));
-		return TELNUT_STATE_CONNECTED;
+		action = tfp_getaction(tel->conn.tfp,
+			(char *)evbuffer_pullup(tel->recvbuf.in, -1), (int)evbuffer_get_length(tel->recvbuf.in),
+			&cmd, &cmdlen);
+		switch (action) {
+		case TFP_SEND:
+			_recvbuf_init(tel);
+			_send(tel, cmd, cmdlen, 1);
+			break;
+		case TFP_WAIT:
+			if (tel->conn.wait_count > 5) {
+				_error(tel, TELNUT_ERROR_LOGIN);
+				return 0;
+			}
+			_recvbuf_init(tel);
+			_send(tel, "", 0, 1); /* sometimes sending crlf helps */
+			tel->conn.wait_count += 1;
+			break;
+		case TFP_HAS_SHELL:
+			return TELNUT_STATE_CONNECTED;
+		case TFP_ERROR:
+			_error(tel, TELNUT_ERROR_LOGIN); // XXX use correct error
+			return 0;
+		}
 	}
 	return -1;
 }
@@ -255,14 +269,12 @@ static int
 _s_connected(struct telnut *tel)
 {
 	tel->cbusr_connect(tel, tel->cbusr_arg);
-	LOG_VERBOSE("learn.login_userprompt: %s\n", tel->learn.login_userprompt);
-	LOG_VERBOSE("learn.login_passprompt: %s\n", tel->learn.login_passprompt);
-	LOG_VERBOSE("learn.shell_prompt: %s\n", tel->learn.shell_prompt);
+	LOG_VERBOSE("Host fingerprint:\n%s\n", tfp_str(tel->conn.tfp));
 	return 0;
 }
 
 static int
-_s_exec_waitanswer(struct telnut *tel)
+_s_action_waitanswer(struct telnut *tel)
 {
 	if (!_recvbuf(tel)) {
 		tel->act.exec.cbusr_done(tel, tel->error, tel->act.exec.cmd,
@@ -291,23 +303,30 @@ _wait(struct telnut *tel, float sec)
 }
 
 static void
-_send(struct telnut *tel, char *buffer, size_t size, int addcrlf)
+_send(struct telnut *tel, const char *buffer, size_t size, int addcrlf)
 {
 	static char crlf[] = { '\r', '\n' };
+	// static char crlf[] = { '\r' };
 	int i;
 
+	LOG_VERBOSE("\n=== SENDING ===\n%.*s\n", (int)size, buffer);
 	for (i = 0; i != size; ++i) {
 		/* if we got a CR or LF, replace with CRLF
 		 * NOTE that usually you'd get a CR in UNIX, but in raw
 		 * mode we get LF instead (not sure why)
 		 */
-		if (buffer[i] == '\r' || buffer[i] == '\n')
+		if (buffer[i] == '\r' || buffer[i] == '\n') {
 			telnet_send(tel->conn.telnet, crlf, 2);
-		else
+			// tel->conn.echosuppress_count += 1;
+		} else {
 			telnet_send(tel->conn.telnet, buffer + i, 1);
+			// tel->conn.echosuppress_count += 1;
+		}
 	}
-	if (addcrlf)
+	if (addcrlf) {
 		telnet_send(tel->conn.telnet, crlf, 2);
+		// tel->conn.echosuppress_count += 1;
+	}
 }
 
 static void
@@ -351,6 +370,8 @@ static void
 _cb_telnet_event(telnet_t *telnet, telnet_event_t *ev, void *user_data)
 {
 	struct telnut *tel;
+	char *bufptr;
+	int writelen;
 
 	tel = user_data;
 
@@ -358,14 +379,24 @@ _cb_telnet_event(telnet_t *telnet, telnet_event_t *ev, void *user_data)
 	switch (ev->type) {
 	/* data received */
 	case TELNET_EV_DATA:
-		// printf(data)
-		evbuffer_add(tel->conn.telnetbuf_in, ev->data.buffer, ev->data.size);
 		LOG_VERBOSE("_cb_telnet_event: DATA: %.*s\n", (int)ev->data.size, ev->data.buffer);
+		/* echo cancellation, best effort */
+		writelen = ev->data.size - tel->conn.echosuppress_count;
+		if (writelen <= 0) {
+			tel->conn.echosuppress_count -= ev->data.size;
+			break;
+		}
+		bufptr = (char *)ev->data.buffer + tel->conn.echosuppress_count;
+		tel->conn.echosuppress_count = 0;
+		/* write to input recvbuf buffer */
+		evbuffer_add(tel->conn.telnetbuf_in, bufptr, writelen);
 		break;
 	/* data must be sent */
 	case TELNET_EV_SEND:
-		// _send(tel, ev->data.buffer, ev->data.size);
-		bufferevent_write(tel->conn.bufev, ev->data.buffer, ev->data.size);
+		if ((ev->data.size >= 3) && (!strncmp(ev->data.buffer, "\xff", 1)))
+			bufferevent_write(tel->conn.bufev, ev->data.buffer, ev->data.size); /* telnet cmd, fast */
+		else
+			_send_sock_defer(tel, ev->data.buffer, ev->data.size); /* data, humanoid like, slow */
 		break;
 	/* request to enable remote feature (or receipt) */
 	case TELNET_EV_WILL:
@@ -411,6 +442,7 @@ _recvbuf_init(struct telnut *tel)
 		evbuffer_drain(tel->recvbuf.in, -1);
 	tel->recvbuf.lastrecv_ticks = 0;
 	tel->recvbuf.total_ticks = 0;
+	tel->recvbuf.max_ticks = 8;
 }
 
 static int
@@ -421,7 +453,7 @@ _recvbuf(struct telnut *tel)
 	len = evbuffer_get_length(tel->conn.telnetbuf_in);
 	LOG_VERBOSE("_recvbuf: len=%d lastrecv_tick=%d\n", len, tel->recvbuf.lastrecv_ticks);
 	if (len <= 0) {
-		if (tel->recvbuf.lastrecv_ticks > 4)
+		if (tel->recvbuf.lastrecv_ticks > tel->recvbuf.max_ticks)
 			return 0;
 		else if (evbuffer_get_length(tel->recvbuf.in) > 0)
 			tel->recvbuf.lastrecv_ticks++;
@@ -429,5 +461,60 @@ _recvbuf(struct telnut *tel)
 		evbuffer_add_buffer(tel->recvbuf.in, tel->conn.telnetbuf_in);
 	}
 	return -1;
+}
+
+static void
+_send_sock_defer(struct telnut *tel, const char *buffer, size_t size)
+{
+	evbuffer_add(tel->senddefer.out, buffer, size);
+	_senddefer_schedule(tel);
+}
+
+static void
+_senddefer_schedule(struct telnut *tel)
+{
+	struct timeval next;
+
+	if (evtimer_pending(tel->senddefer.ev_send, NULL))
+		return;
+	next.tv_sec = 0;
+	next.tv_usec = 75000; // XXX randomize
+	evtimer_add(tel->senddefer.ev_send, &next);
+}
+
+static void
+_cb_senddefer(int fd, short why, void *data)
+{
+	struct telnut *tel;
+	int len, sendlen, remaining, rs;
+	char *buf;
+
+	tel = data;
+	len = evbuffer_get_length(tel->senddefer.out);
+	if (!len)
+		return;
+	sendlen = 1;
+	buf = (char *)evbuffer_pullup(tel->senddefer.out, sendlen);
+	if (len >= 2 && !strncmp(buf, "\r", 1)) { /* clrf */
+		sendlen = 2;
+		buf = (char *)evbuffer_pullup(tel->senddefer.out, sendlen);
+	}
+	remaining = sendlen;
+	while (remaining > 0) {
+		if ((rs = send(bufferevent_getfd(tel->conn.bufev), buf, remaining, 0)) == -1) {
+			fprintf(stderr, "send() failed: %s\n", strerror(errno));
+			return;
+		} else if (rs == 0) {
+			fprintf(stderr, "send() unexpectedly returned 0\n");
+			return;
+		}
+		buf += rs;
+		remaining -= rs;
+	}
+	evbuffer_drain(tel->senddefer.out, sendlen);
+
+	len = evbuffer_get_length(tel->senddefer.out);
+	if (len > 0)
+		_senddefer_schedule(tel);
 }
 

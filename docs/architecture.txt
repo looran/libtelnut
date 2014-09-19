@@ -1,0 +1,83 @@
+Always be looking for a shell.
+No assumption about login method.
+There is also the prompt, that is not yet a shell.
+
+TELNUT_STATE_UNINITIALIZED
+TELNUT_STATE_SOCKET_CONNECTING
+TELNUT_STATE_LOGIN
+TELNUT_STATE_LOGIN_WAITANSWER
+TELNUT_STATE_PROMPT
+TELNUT_STATE_PROMPT_WAITANSWER
+TELNUT_STATE_SHELL
+TELNUT_STATE_SHELL_WAITANSWER
+
+Send decision = Last Answer + History
+All possible behaviors in configuration
+
+Configuration:
+
+First line match selects conf to try.
+Then if future line fails to match, use other conf.
+
+struct tfp_login {
+	char *name;
+	struct {
+		char        *recv;
+		int          recv_cflags;
+		enum tfp_act act;
+		int          act_params;
+	} user;
+	struct {
+		char        *recv;
+		int          recv_cflags;
+		enum tfp_act act;
+		int          act_params;
+	} pass;
+};
+
+struct tfp_prompt {
+	char *name;
+	struct {
+		char *user;
+		int   user_cflags;
+		char *pass;
+		int   pass_cflags;
+		char *prompt;
+		int   prompt_cflags;
+	} login;
+	struct {
+		char *cmd;
+	} getshell;
+	struct {
+		char        *shell;
+		int          shell_cflags;
+		enum tfp_act act;
+		int          act_params;
+	} prompt;
+}
+
+Last rule to match is selected.
+If no rule matches then go to next state (LOGIN -> PROMPT -> SHELL).
+
+struct tfp_login _logins[][] = {
+	{ "nologin",
+	  { NULL, 0, 0, 0 },
+	  { NULL, 0, 0, 0 } },
+	{ "immediate password",
+	  { NULL, 0, 0, 0 },
+	  { ".*password.*", 0, TFP_SEND_PASSWORD, 0 } }
+	{ "default user/pass",
+	  { ".*user.*", 0, TFP_SEND_USERNAME, 0 },
+	  { ".*password.*", 0, TFP_SEND_PASSWORD, 0 } },
+}
+
+struct tfp_promt _prompt[][] = {
+	{ "direct shell",
+	  { NULL, 0, NULL, 0, NULL, 0 },
+	  { NULL, },
+	  { ".*(>|#)[ ]+$", 0, TFP_HAS_SHELL, 0 } },
+	{ "OS7030",
+	  { ".*OS7030.*", 0, NULL, 0 , ".*Please select a menu number :$", 0},
+	  { "1", }, # choice menu, 1. bash shell
+	  { ".*bash-[0-9\.]#$", 0, TFP_HAS_SHELL, 0 } },
+}

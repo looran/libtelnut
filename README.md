@@ -13,10 +13,8 @@ _cb_exec(struct telnut *tel, enum telnut_error error, char *cmd, char *output, i
 {
 	if (error != TELNUT_NOERROR)
 		telnut_err_print(error);
-	else {
-		printf("> %s\n", cmd);
+	else
 		printf("%.*s\n", output_len, output);
-	}
 	event_base_loopbreak(tel->evb);
 }
 
@@ -24,7 +22,7 @@ static void
 _cb_connect(struct telnut *tel, void *arg)
 {
 	printf("Connected !\n");
-	telnut_exec(tel, "uname -ap", _cb_exec, NULL);
+	telnut_exec(tel, "ps", _cb_exec, NULL);
 }
 
 static void
@@ -44,8 +42,8 @@ main(void)
 
 	evb = event_base_new();
 
-	tel = telnut_new(evb, "127.0.0.1", 23, "user", "password", TELNUT_NORECONNECT, TELNUT_NOVERBOSE,
-	 	_cb_connect, _cb_disconnect, NULL);
+	tel = telnut_new(evb, "127.0.0.1", 23, "admin", "1234",
+		TELNUT_NORECONNECT, TELNUT_NOVERBOSE, _cb_connect, _cb_disconnect, NULL);
 	event_base_dispatch(evb);
 
 	telnut_free(tel);
@@ -79,6 +77,9 @@ make && sudo make install
 See [telnut.h](telnut.h)
 
 ### Ressources
+
+On telnet
+* http://www.ics.uci.edu/~rohit/IEEE-L7-v2.html
 
 Telnet clients automated login:
 * https://github.com/robotframework/robotframework/blob/master/src/robot/libraries/Telnet.py
