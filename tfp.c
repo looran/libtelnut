@@ -20,24 +20,19 @@ static enum tfp_action _login(struct tfp *, const char **, int *);
 static int             _login_hasfailed(struct tfp *, const char **, int *);
 static enum tfp_action _console(struct tfp *, const char **, int *);
 static enum tfp_action _shell(struct tfp *, const char **, int *);
-static int _regcmp(char *, char *, int);
+static int _regcmp(struct tfp *, char *, char *, int);
 
-// #define DEBUG
-
-#ifdef DEBUG
-#define LOG_VERBOSE(parg, ...) do { printf( parg, ##__VA_ARGS__); } while(0);
-#else
-#define LOG_VERBOSE(parg, ...) do { } while(0);
-#endif
+#define LOG_VERBOSE(parg, ...) do { if (tfp->conf.verbose) { printf("telnut_tfp: " parg, ##__VA_ARGS__); } } while(0);
 
 struct tfp *
-tfp_new(char *user, char *pass)
+tfp_new(char *user, char *pass, int verbose)
 {
 	struct tfp *tfp;
 
 	tfp = calloc(1, sizeof(struct tfp));
 	tfp->conf.user = user;
 	tfp->conf.pass = pass;
+	tfp->conf.verbose = verbose;
 	return tfp;
 }
 
@@ -119,10 +114,10 @@ _login(struct tfp *tfp, const char **cmd, int *cmdlen)
 	for (i=0; i<TFP_LOGINS_COUNT; i++) {
 		login = &_logins[i];
 		if (!login->user.user
-		    || !_regcmp(tfp->learn.login_user, login->user.user, login->user.cflags)) {
+		    || !_regcmp(tfp, tfp->learn.login_user, login->user.user, login->user.cflags)) {
 			if (tfp->learn.login_pass) {
 				if (!login->pass.pass
-				    || !_regcmp(tfp->learn.login_pass, login->pass.pass, login->pass.cflags)) {
+				    || !_regcmp(tfp, tfp->learn.login_pass, login->pass.pass, login->pass.cflags)) {
 					lastmatch = login;
 					lastmatch_pass = 1;
 				}
@@ -131,7 +126,7 @@ _login(struct tfp *tfp, const char **cmd, int *cmdlen)
 					lastmatch = login;
 					lastmatch_pass = 0;
 				} else if (login->pass.pass
-				           && !_regcmp(tfp->learn.login_user, login->pass.pass, login->pass.cflags)) {
+				           && !_regcmp(tfp, tfp->learn.login_user, login->pass.pass, login->pass.cflags)) {
 					lastmatch = login;
 					lastmatch_pass = 1;
 				}
@@ -164,10 +159,10 @@ _login_hasfailed(struct tfp *tfp, const char **cmd, int *cmdlen)
 	for (i=0; i<TFP_LOGINS_FAILED_COUNT; i++) {
 		fail = &_logins_failed[i];
 		if (tfp->learn.login_pass && fail->pass.pass
-		    && !_regcmp(tfp->learn.login_pass, fail->pass.pass, fail->pass.cflags))
+		    && !_regcmp(tfp, tfp->learn.login_pass, fail->pass.pass, fail->pass.cflags))
 			return 1;
 		if (tfp->learn.login_console && fail->console.console
-		    && !_regcmp(tfp->learn.login_console, fail->console.console, fail->console.cflags))
+		    && !_regcmp(tfp, tfp->learn.login_console, fail->console.console, fail->console.cflags))
 			return 1;
 	}
 
@@ -189,11 +184,11 @@ _console(struct tfp *tfp, const char **cmd, int *cmdlen)
 	for (i=0; i<TFP_CONSOLES_COUNT; i++) {
 		console = &_consoles[i];
 		if (!console->login.user || !tfp->learn.login_user
-		    || !_regcmp(tfp->learn.login_user, console->login.user, console->login.user_cflags))
+		    || !_regcmp(tfp, tfp->learn.login_user, console->login.user, console->login.user_cflags))
 			if (!console->login.pass || !tfp->learn.login_pass
-			    || !_regcmp(tfp->learn.login_pass, console->login.pass, console->login.pass_cflags))
+			    || !_regcmp(tfp, tfp->learn.login_pass, console->login.pass, console->login.pass_cflags))
 				if (!console->login.console || !tfp->learn.login_console
-				    || !_regcmp(tfp->learn.login_console, console->login.console, console->login.console_cflags))
+				    || !_regcmp(tfp, tfp->learn.login_console, console->login.console, console->login.console_cflags))
 					lastmatch = console;
 	}
 	if (lastmatch) {
@@ -220,8 +215,8 @@ _shell(struct tfp *tfp, const char **cmd, int *cmdlen)
 {
 	enum tfp_action action;
 
-	if ( (tfp->console->fpshell.shell && !_regcmp(tfp->learn.shell_prompt, tfp->console->fpshell.shell, tfp->console->fpshell.shell_cflags))
-	     || (tfp->console->login.console && !_regcmp(tfp->learn.shell_prompt, tfp->console->login.console, tfp->console->login.console_cflags)) ) {
+	if ( (tfp->console->fpshell.shell && !_regcmp(tfp, tfp->learn.shell_prompt, tfp->console->fpshell.shell, tfp->console->fpshell.shell_cflags))
+	     || (tfp->console->login.console && !_regcmp(tfp, tfp->learn.shell_prompt, tfp->console->login.console, tfp->console->login.console_cflags)) ) {
 		tfp->state = TFP_STATE_SHELL;
 		action = TFP_HAS_SHELL;
 	} else {
@@ -232,7 +227,7 @@ _shell(struct tfp *tfp, const char **cmd, int *cmdlen)
 }
 
 static int
-_regcmp(char *str, char *regstr, int cflags)
+_regcmp(struct tfp *tfp, char *str, char *regstr, int cflags)
 {
 	char errbuf[100];
 	regex_t reg;

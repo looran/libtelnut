@@ -107,7 +107,7 @@ telnut_connect(struct telnut *tel)
 
 	tel->conn.telnet = telnet_init(_telopts, _cb_telnet_event, 0, tel);
 	tel->conn.telnetbuf_in = evbuffer_new();
-	tel->conn.tfp = tfp_new(tel->conf.user, tel->conf.pass);
+	tel->conn.tfp = tfp_new(tel->conf.user, tel->conf.pass, tel->conf.verbose);
 
 	tel->senddefer.out = evbuffer_new();
 	tel->senddefer.ev_send = evtimer_new(tel->evb, _cb_senddefer, tel);

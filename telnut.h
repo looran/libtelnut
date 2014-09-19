@@ -131,6 +131,7 @@ struct tfp {
 	struct {
 		char *user;
 		char *pass;
+		int verbose;
 	} conf;
 	struct {
 		char *login_user;
@@ -212,7 +213,7 @@ void telnut_action_stop(struct telnut *tel);
 
 /* tfp.c */
 
-struct tfp     *tfp_new(char *user, char *pass);
+struct tfp     *tfp_new(char *user, char *pass, int verbose);
 void            tfp_free(struct tfp *tfp);
 enum tfp_action tfp_getaction(struct tfp *tfp, char *recv, int recv_len, const char **cmd, int *cmdlen);
 const char     *tfp_str(struct tfp *tfp);

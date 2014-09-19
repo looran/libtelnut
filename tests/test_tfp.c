@@ -69,7 +69,7 @@ main(void)
 	for (tc_num=0; tc_num<TESTS_COUNT; tc_num++) {
 		tc = &_tcs[tc_num];
 		printf("==========================================================================\nTC %d/%d : %s\n", tc_num, TESTS_COUNT-1, tc->name);
-		tfp = tfp_new("root", "1234");
+		tfp = tfp_new("root", "1234", 0);
 
 		if (tc->user.prompt) {
 			printf("behavioral test: login\n");
