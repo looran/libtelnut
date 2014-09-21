@@ -8,7 +8,7 @@ _cb_push(struct telnut *tel, enum telnut_error error, void *arg)
 	if (error != TELNUT_NOERROR)
 		telnut_err_print(error);
 	else
-		printf("File pushed successfuly !");
+		printf("File pushed successfuly !\n");
 	event_base_loopbreak(tel->evb);
 }
 

@@ -88,6 +88,8 @@ main(int argc, char *argv[])
 		usage(1);
 	if (argc < 2 || argc > 3)
 		usage(1);
+	if (_copy_file && !_copy_file_remote)
+		_copy_file_remote = _copy_file;
 	ip = argv[0];
 	username = argv[1];
 	if (argc == 3) {
@@ -148,7 +150,7 @@ _cb_push(struct telnut *tel, enum telnut_error error, void *arg)
 	if (error != TELNUT_NOERROR)
 		telnut_err_print(error);
 	else
-		printf("File pushed successfuly !");
+		printf("File pushed successfuly !\n");
 	_action(tel);
 }
 
