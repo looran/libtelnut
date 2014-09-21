@@ -5,3 +5,7 @@ all:
 
 run: all
 	./test_tfp
+
+clean:
+	rm -f test_tfp
+

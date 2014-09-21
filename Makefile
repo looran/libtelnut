@@ -25,6 +25,12 @@ install:
 	install -m 0644 $(TARGET) $(LIBDIR)
 	install -m 0644 $(HEADERS) $(INCLUDEDIR)
 
+dev:
+	export CFLAGS="-g -O0"; make clean && make && make -C tests && make -C examples && make -C bin/ && make -C tests run && sudo make install && sudo make -C bin/ install
+
 clean:
 	rm -f $(TARGET) $(OBJECTS)
+	make -C tests/ clean
+	make -C examples/ clean
+	make -C bin/ clean
 

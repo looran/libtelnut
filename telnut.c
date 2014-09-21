@@ -16,10 +16,12 @@
 
 #include <unistd.h>
 #include <string.h>
+#include <stdlib.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <errno.h>
+#include <fcntl.h>
 
 #include <event2/bufferevent.h>
 #include <event2/buffer.h>
@@ -28,6 +30,8 @@
 #include "telnut.h"
 
 #define LOG_VERBOSE(parg, ...) do { if (tel->conf.verbose) { printf("telnut: " parg, ##__VA_ARGS__); } }while(0);
+#define TELNUT_FILEBUF_SIZE 100000
+#define BASE64_SH_DECOMPRESS_ONELINER
 
 static const telnet_telopt_t _telopts[] = {
 	{ TELNET_TELOPT_SGA,		TELNET_WONT, TELNET_DO   },
@@ -45,12 +49,17 @@ static void _state(struct telnut *);
 static void _state_next(struct telnut *, enum telnut_state);
 static int  _s_connecting(struct telnut *);
 static int  _s_connected(struct telnut *);
-static int  _s_action_waitanswer(struct telnut *);
+static int  _s_exec_waitanswer(struct telnut *);
+static int  _s_push_cat(struct telnut *);
+static int  _s_push_send(struct telnut *);
+static int  _s_push_ctrlc(struct telnut *);
 static void _error(struct telnut *, enum telnut_error);
 static void _wait(struct telnut *, float);
 static void _send(struct telnut *, const char *, size_t, int);
 static void _cb_wait(int, short, void *);
+static void _cb_stdin_read(int, short, void *);
 static void _cb_sock_read(struct bufferevent *, void *);
+static void _cb_sock_write(struct bufferevent *, void *);
 static void _cb_sock_event(struct bufferevent *, short, void *);
 static void _cb_telnet_event(telnet_t *, telnet_event_t *, void *);
 static void _recvbuf_init(struct telnut *);
@@ -113,7 +122,7 @@ telnut_connect(struct telnut *tel)
 	tel->senddefer.ev_send = evtimer_new(tel->evb, _cb_senddefer, tel);
 
 	tel->conn.bufev = bufferevent_socket_new(tel->evb, -1, BEV_OPT_CLOSE_ON_FREE);
-	bufferevent_setcb(tel->conn.bufev, _cb_sock_read, NULL, _cb_sock_event, tel);
+	bufferevent_setcb(tel->conn.bufev, _cb_sock_read, _cb_sock_write, _cb_sock_event, tel);
 	bufferevent_enable(tel->conn.bufev, EV_READ|EV_WRITE);
 	if (bufferevent_socket_connect(tel->conn.bufev, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
 		_error(tel, TELNUT_ERROR_CONNECTION_CLOSED);
@@ -149,7 +158,29 @@ telnut_disconnect(struct telnut *tel)
 void
 telnut_err_print(enum telnut_error error)
 {
-	printf("telnut error: %d\n", error);
+	printf("Telnut error: ");
+	switch(error) {
+	case TELNUT_NOERROR: printf("no error\n"); break;
+	case TELNUT_ERROR_UNKNOWN_STATE: printf("Unknown state\n"); break;
+	case TELNUT_ERROR_CONNECTION: printf("Connection error\n"); break;
+	case TELNUT_ERROR_CONNECTION_CLOSED: printf("Connection closed\n"); break;
+	case TELNUT_ERROR_LOGIN: printf("Login error\n"); break;
+	case TELNUT_ERROR_SHELL: printf("Error while trying to get a shell\n"); break;
+	case TELNUT_ERROR_TELNETPROTO: printf("Internal libtelnet error\n"); break;
+	}
+}
+
+int
+telnut_interactive(struct telnut *tel)
+{
+	LOG_VERBOSE("Interactive shell\n");
+	tel->action = TELNUT_ACTION_INTERACTIVE;
+	tel->state = TELNUT_STATE_INTERACTIVE;
+	fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK);
+	tel->act.interactive.stdin = event_new(tel->evb, STDIN_FILENO, EV_READ|EV_PERSIST, _cb_stdin_read, tel);
+	event_add(tel->act.interactive.stdin, NULL);
+	_send(tel, "", 0, 1);
+	return 0;
 }
 
 int
@@ -161,7 +192,33 @@ telnut_exec(struct telnut *tel, char *cmd,
 	tel->act.exec.cbusr_done = cbusr_done;
 	tel->act_cbusr_arg = cbusr_arg;
 	_send(tel, tel->act.exec.cmd, strlen(cmd), 1);
-	_state_next(tel, TELNUT_STATE_ACTION_WAITANSWER);
+	_state_next(tel, TELNUT_STATE_EXEC_WAITANSWER);
+	return 0;
+}
+
+int
+telnut_push(struct telnut *tel, char *path_local, char *path_remote,
+	void (*cbusr_done)(struct telnut *, enum telnut_error, void *), void *cbusr_arg)
+{
+	char cmd[200];
+
+	tel->action = TELNUT_ACTION_PUSH;
+	tel->act.push.path_local = strdup(path_local);
+	tel->act.push.path_remote = strdup(path_remote);
+
+	tel->act.push.file = fopen(path_local, "rb");
+	if (!tel->act.push.file) {
+		telnut_action_stop(tel);
+		return -1;
+	}
+	stat(tel->act.push.path_local, &tel->act.push.fileinfo);
+	tel->act.push.filebuf = malloc(TELNUT_FILEBUF_SIZE * sizeof(char));
+
+	tel->act.push.cbusr_done = cbusr_done;
+	tel->act_cbusr_arg = cbusr_arg;
+	snprintf(cmd, sizeof(cmd), "cat > %s", path_remote);
+	_send(tel, cmd, strlen(cmd), 1);
+	_state_next(tel, TELNUT_STATE_PUSH_CAT);
 	return 0;
 }
 
@@ -171,10 +228,19 @@ telnut_action_stop(struct telnut *tel)
 	switch(tel->action) {
 	case TELNUT_NOACTION:
 		break;
+	case TELNUT_ACTION_INTERACTIVE:
+		event_free(tel->act.interactive.stdin);
+		break;
 	case TELNUT_ACTION_EXEC:
 		free(tel->act.exec.cmd);
 		tel->act.exec.cbusr_done = NULL;
-		// XXX if we where TELNUT_STATE_ACTION_WAITANSWER, need to ignore cmd result receive
+		// XXX if we where TELNUT_STATE_EXEC_WAITANSWER, need to ignore cmd result receive
+		break;
+	case TELNUT_ACTION_PUSH:
+		free(tel->act.push.filebuf);
+		fclose(tel->act.push.file);
+		free(tel->act.push.path_local);
+		free(tel->act.push.path_remote);
 		break;
 	}
 	tel->action = TELNUT_NOACTION;
@@ -193,7 +259,11 @@ _state(struct telnut *tel)
 	case TELNUT_STATE_DISCONNECTED: _error(tel, TELNUT_ERROR_UNKNOWN_STATE); break;
 	case TELNUT_STATE_CONNECTING: rc=_s_connecting(tel); break;
 	case TELNUT_STATE_CONNECTED: rc=_s_connected(tel); break;
-	case TELNUT_STATE_ACTION_WAITANSWER: rc=_s_action_waitanswer(tel); break;
+	case TELNUT_STATE_INTERACTIVE: break;
+	case TELNUT_STATE_EXEC_WAITANSWER: rc=_s_exec_waitanswer(tel); break;
+	case TELNUT_STATE_PUSH_CAT: rc=_s_push_cat(tel); break;
+	case TELNUT_STATE_PUSH_SEND: rc=_s_push_send(tel); break;
+	case TELNUT_STATE_PUSH_CTRLC: rc=_s_push_ctrlc(tel); break;
 	}
 	if (rc == -1)
 		_state_next(tel, tel->state);
@@ -216,15 +286,19 @@ _state_next(struct telnut *tel, enum telnut_state state)
 	switch(state) {
 	case TELNUT_STATE_UNINITIALIZED:
 	case TELNUT_STATE_DISCONNECTED:
+	case TELNUT_STATE_INTERACTIVE:
 		_error(tel, TELNUT_ERROR_UNKNOWN_STATE); break;
 		break;
 	case TELNUT_STATE_CONNECTING:
-	case TELNUT_STATE_ACTION_WAITANSWER:
+	case TELNUT_STATE_EXEC_WAITANSWER:
+	case TELNUT_STATE_PUSH_CAT:
+	case TELNUT_STATE_PUSH_CTRLC:
 		if (statechange)
 			_recvbuf_init(tel);
 		_wait(tel, 0.2);
 		break;
 	case TELNUT_STATE_CONNECTED:
+	case TELNUT_STATE_PUSH_SEND:
 		_state(tel);
 		break;
 	}
@@ -274,7 +348,7 @@ _s_connected(struct telnut *tel)
 }
 
 static int
-_s_action_waitanswer(struct telnut *tel)
+_s_exec_waitanswer(struct telnut *tel)
 {
 	if (!_recvbuf(tel)) {
 		tel->act.exec.cbusr_done(tel, tel->error, tel->act.exec.cmd,
@@ -286,6 +360,78 @@ _s_action_waitanswer(struct telnut *tel)
 	}
 	return -1;
 }
+
+static int
+_s_push_cat(struct telnut *tel)
+{
+	if (!_recvbuf(tel)) {
+		// XXX check cat output for errors
+		return TELNUT_STATE_PUSH_SEND;
+	}
+	return -1;
+}
+
+static int
+_s_push_send(struct telnut *tel)
+{
+	char *filebuf_start;
+
+	if (!tel->act.push.filebuf_remaining) {
+		tel->act.push.filebuf_size = fread(tel->act.push.filebuf, 1, TELNUT_FILEBUF_SIZE,
+						   tel->act.push.file);
+		tel->act.push.filebuf_remaining = tel->act.push.filebuf_size;
+	}
+	if (tel->act.push.filebuf_remaining <= 0) { /* EOF */
+		bufferevent_write(tel->conn.bufev, "\r\n", 2);
+		bufferevent_write(tel->conn.bufev, "\x27", 1);
+		return TELNUT_STATE_PUSH_CTRLC;
+	}
+	filebuf_start = (tel->act.push.filebuf + tel->act.push.filebuf_size) - tel->act.push.filebuf_remaining;
+	if (!bufferevent_write(tel->conn.bufev, filebuf_start, tel->act.push.filebuf_remaining))
+		tel->act.push.filebuf_remaining = 0;
+	return 0; /* do not trigger _state_next(), _cb_sock_write() will call us */
+}
+
+static int
+_s_push_ctrlc(struct telnut *tel)
+{
+	if (!_recvbuf(tel)) {
+		// XXX check we got prompt
+		tel->act.push.cbusr_done(tel, tel->error, tel->act_cbusr_arg);
+		telnut_action_stop(tel);
+		return 0;
+	}
+	return -1;
+}
+
+/* static int
+_s_push_ls(struct telnut *tel)
+{
+	char cmd[200];
+
+	if (!_recvbuf(tel)) {
+		// XXX check we got prompt
+		snprintf(cmd, sizeof(cmd), "cat %s |%s > %s",
+			tel->act.push.path_remote, BASE64_SH_DECOMPRESS_ONELINER, path_remote);
+		bufferevent_write(tel->conn.bufev, cmd, strlen(cmd));
+		return TELNUT_STATE_PUSH_DECOMPRESS;
+	}
+	return -1;
+} */
+
+/* static int
+_s_push_decompress(struct telnut *tel)
+{
+	char cmd[200];
+
+	if (!_recvbuf(tel)) {
+		// XXX wait for prompt
+		snprintf(cmd, sizeof(cmd), "rm %s", tel->act.push.path_remote);
+		_send(tel, cmd, strlen(cmd), 1);
+		return 0;
+	}
+	return -1;
+} */
 
 static void
 _error(struct telnut *tel, enum telnut_error error)
@@ -339,6 +485,20 @@ _cb_wait(int fd, short why, void *data)
 }
 
 static void
+_cb_stdin_read(int fd, short why, void *data)
+{
+	struct telnut *tel;
+	char buf[512];
+	int len;
+
+	tel = data;
+	LOG_VERBOSE("_cb_stdin_read\n");
+	while ((len = read(STDIN_FILENO, buf, sizeof(buf))) > 0)
+		bufferevent_write(tel->conn.bufev, buf, len);
+}
+
+
+static void
 _cb_sock_read(struct bufferevent *bev, void *ctx)
 {
 	struct telnut *tel;
@@ -352,6 +512,27 @@ _cb_sock_read(struct bufferevent *bev, void *ctx)
 	data = (char *)evbuffer_pullup(bufin, -1);
 	telnet_recv(tel->conn.telnet, data, len);
 	evbuffer_drain(bufin, -1);
+}
+
+static void
+_cb_sock_write(struct bufferevent *bev, void *ctx)
+{
+	struct telnut *tel;
+
+	tel = ctx;
+	switch (tel->state) {
+	case TELNUT_STATE_UNINITIALIZED:
+	case TELNUT_STATE_DISCONNECTED:
+	case TELNUT_STATE_CONNECTING:
+	case TELNUT_STATE_CONNECTED:
+	case TELNUT_STATE_INTERACTIVE:
+	case TELNUT_STATE_EXEC_WAITANSWER:
+	case TELNUT_STATE_PUSH_CAT:
+	case TELNUT_STATE_PUSH_CTRLC:
+		return;
+	case TELNUT_STATE_PUSH_SEND:
+		_state(tel);
+	}
 }
 
 static void
@@ -388,8 +569,10 @@ _cb_telnet_event(telnet_t *telnet, telnet_event_t *ev, void *user_data)
 		}
 		bufptr = (char *)ev->data.buffer + tel->conn.echosuppress_count;
 		tel->conn.echosuppress_count = 0;
-		/* write to input recvbuf buffer */
-		evbuffer_add(tel->conn.telnetbuf_in, bufptr, writelen);
+		if (tel->state == TELNUT_STATE_INTERACTIVE)
+			printf("%.*s", writelen, bufptr);
+		else
+			evbuffer_add(tel->conn.telnetbuf_in, bufptr, writelen); /* recvbuf buffer */
 		break;
 	/* data must be sent */
 	case TELNET_EV_SEND:
@@ -502,10 +685,10 @@ _cb_senddefer(int fd, short why, void *data)
 	remaining = sendlen;
 	while (remaining > 0) {
 		if ((rs = send(bufferevent_getfd(tel->conn.bufev), buf, remaining, 0)) == -1) {
-			fprintf(stderr, "send() failed: %s\n", strerror(errno));
+			LOG_VERBOSE("_cb_senddefer: send() failed: %s\n", strerror(errno));
 			return;
 		} else if (rs == 0) {
-			fprintf(stderr, "send() unexpectedly returned 0\n");
+			LOG_VERBOSE("_cb_senddefer: send() unexpectedly returned 0\n");
 			return;
 		}
 		buf += rs;

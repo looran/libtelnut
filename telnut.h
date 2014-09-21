@@ -37,7 +37,11 @@ enum telnut_state {
 	TELNUT_STATE_DISCONNECTED,
 	TELNUT_STATE_CONNECTING,
 	TELNUT_STATE_CONNECTED,
-	TELNUT_STATE_ACTION_WAITANSWER,
+	TELNUT_STATE_INTERACTIVE,
+	TELNUT_STATE_EXEC_WAITANSWER,
+	TELNUT_STATE_PUSH_CAT,
+	TELNUT_STATE_PUSH_SEND,
+	TELNUT_STATE_PUSH_CTRLC,
 };
 
 enum telnut_error {
@@ -53,6 +57,8 @@ enum telnut_error {
 enum telnut_action {
 	TELNUT_NOACTION = 0,
 	TELNUT_ACTION_EXEC = 1,
+	TELNUT_ACTION_PUSH = 2,
+	TELNUT_ACTION_INTERACTIVE = 3,
 };
 
 enum tfp_state {
@@ -97,6 +103,9 @@ struct telnut {
 	void (*cbusr_disconnect)(struct telnut *, enum telnut_error, void *);
 	void *cbusr_arg;
 	union {
+		struct {
+			struct event *stdin;
+		} interactive;
 		struct {
 			char *cmd;
 			void (*cbusr_done)(struct telnut *, enum telnut_error, char *, char *, int, void *);
@@ -203,12 +212,11 @@ int  telnut_connect(struct telnut *tel);
 int  telnut_disconnect(struct telnut *tel);
 void telnut_err_print(enum telnut_error error);
 
+int telnut_interactive(struct telnut *tel);
 int telnut_exec(struct telnut *tel, char *cmd, 
 	void (*cbusr_done)(struct telnut *, enum telnut_error, char *, char *, int, void *), void *cbusr_arg);
 int telnut_push(struct telnut *tel, char *path_local, char *path_remote,
-	void (*cbusr_done)(struct telnut *, enum telnut_error, void *), void *arg);
-/*int telnut_pull(struct telnut *tel, char *path_remote, char *path_local, int flags,
-	void (*cb)(struct telnut *, int, void *), void *arg);*/
+	void (*cbusr_done)(struct telnut *, enum telnut_error, void *), void *cbusr_arg);
 void telnut_action_stop(struct telnut *tel);
 
 /* tfp.c */
