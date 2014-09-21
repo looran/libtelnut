@@ -7,13 +7,13 @@ libtelnut - telnet async client library
 $ telnut
 usage: telnut [-v] [-p port] (-i | -e command | -c file_path [-C path_remote]) ip username [password]
 
-$ telnut -e "uname -ap" 192.168.1.1 admin 1234
+$ telnut -e "uname -ap" 192.168.0.1 admin 1234
 Connected !
 Executing uname -ap
 uname -ap
-Linux ADSL2PlusRouter 2.6.19 #36 Fri Mar 30 14:43:39 CST 2012 mips unknown
+Linux ADSLRouter 2.6.18 #30 Fri Mar 14 23:44:39 CST 2011 mips unknown
 
-$ telnut -c myfile 192.168.1.1 admin 1234
+$ telnut -c myfile 192.168.0.1 admin 1234
 Connected !
 Pushing myfile
 File pushed successfuly !
