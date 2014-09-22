@@ -8,15 +8,15 @@ $ telnut
 usage: telnut [-v] [-p port] (-i | -e command | -c file_path [-C path_remote]) ip username [password]
 
 $ telnut -e "uname -ap" 192.168.0.1 admin 1234
-Connected !
-Executing uname -ap
-uname -ap
+[-] Connected !
+[-] Executing uname -ap
+[*] uname -ap
 Linux ADSLRouter 2.6.18 #30 Fri Mar 14 23:44:39 CST 2011 mips unknown
 
 $ telnut -c myfile 192.168.0.1 admin 1234
-Connected !
-Pushing myfile
-File pushed successfuly !
+[-] Connected !
+[-] Pushing myfile
+[*] File pushed successfuly !
 ```
 
 ### libtelnut Example: execute a command via Telnet

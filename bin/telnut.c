@@ -113,15 +113,15 @@ static void
 _action(struct telnut *tel)
 {
 	if (_copy_file) {
-		printf("Pushing %s\n", _copy_file);
+		printf("[-] Pushing %s\n", _copy_file);
 		telnut_push(tel, _copy_file, _copy_file_remote, _cb_push, NULL);
 		_copy_file = NULL;
 	} else if (_exec_cmd) {
-		printf("Executing %s\n", _exec_cmd);
+		printf("[-] Executing %s\n", _exec_cmd);
 		telnut_exec(tel, _exec_cmd, _cb_exec, NULL);
 		_exec_cmd = NULL;
 	} else if (_interactive) {
-		printf("Interactive shell\n");
+		printf("[*] Interactive shell\n");
 		telnut_interactive(tel);
 		_interactive = 0;
 	} else {
@@ -132,7 +132,7 @@ _action(struct telnut *tel)
 static void
 _cb_connect(struct telnut *tel, void *arg)
 {
-	printf("Connected !\n");
+	printf("[-] Connected !\n");
 	_action(tel);
 }
 
@@ -150,7 +150,7 @@ _cb_push(struct telnut *tel, enum telnut_error error, void *arg)
 	if (error != TELNUT_NOERROR)
 		telnut_err_print(error);
 	else
-		printf("File pushed successfuly !\n");
+		printf("[*] File pushed successfuly !\n");
 	_action(tel);
 }
 
@@ -160,7 +160,7 @@ _cb_exec(struct telnut *tel, enum telnut_error error, char *cmd, char *output, i
 	if (error != TELNUT_NOERROR)
 		telnut_err_print(error);
 	else
-		printf("%.*s\n", output_len, output);
+		printf("[*] %.*s\n", output_len, output);
 	_action(tel);
 }
 
