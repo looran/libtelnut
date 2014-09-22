@@ -1,3 +1,6 @@
+===========================================================
+Telnet states
+
 Always be looking for a shell.
 No assumption about login method.
 There is also the prompt, that is not yet a shell.
@@ -81,3 +84,19 @@ struct tfp_promt _prompt[][] = {
 	  { "1", }, # choice menu, 1. bash shell
 	  { ".*bash-[0-9\.]#$", 0, TFP_HAS_SHELL, 0 } },
 }
+
+===========================================================
+Push mechanism
+
+---------------------------
+Push plain
+
+---------------------------
+Push base64 decode awk/sh
+
+encode on the fly
+
+---------------------------
+Push base64 decode custom
+
+for big binaries, because decode awk/sh is Slow.
