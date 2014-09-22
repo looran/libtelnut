@@ -1,3 +1,19 @@
+/* b64otf - base64 on-the-fly encoder/decoder */
+/* Copyright (c) 2014 Laurent Ghigonis <laurent@gouloum.fr>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ * 
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
 #include <stdlib.h>
 
 #include "b64otf.h"
@@ -49,7 +65,6 @@ _b64enc(unsigned char *buf64, unsigned char *bufplain, int lenplain)
 {
 	unsigned char *bpos, *ppos, *pend;
 
-	// printf("_b64enc: %.*s\n", lenplain, bufplain);
 	bpos = buf64;
 	ppos = bufplain;
 	pend = bufplain + lenplain;

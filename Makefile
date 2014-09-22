@@ -11,7 +11,7 @@ LIBNAME=libtelnut
 TARGET  = ${LIBNAME}.so
 SOURCES = telnut.c tfp.c
 HEADERS = telnut.h
-OBJECTS = $(SOURCES:.c=.o)
+OBJECTS = $(SOURCES:.c=.o) b64otf/b64otf.o
 
 all: $(TARGET)
 

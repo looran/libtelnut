@@ -28,6 +28,7 @@
 #include <event2/event.h>
 
 #include "telnut.h"
+#include "b64otf/b64otf.h"
 
 #define LOG_VERBOSE(parg, ...) do { if (tel->conf.verbose) { printf("telnut: " parg, ##__VA_ARGS__); } }while(0);
 #define TELNUT_FILEBUF_SIZE 100000
