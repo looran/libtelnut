@@ -1,4 +1,4 @@
-CFLAGS += -Wall -fPIC
+CFLAGS += -Wall -Werror -fPIC
 
 all:
 	$(CC) $(CFLAGS) -c -o b64otf.o b64otf.c

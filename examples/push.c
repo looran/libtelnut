@@ -16,7 +16,7 @@ static void
 _cb_connect(struct telnut *tel, void *arg)
 {
 	printf("Connected !\n");
-	telnut_push(tel, "/proc/version", "/tmp/telnut_pushed_cpuversion", _cb_push, NULL);
+	telnut_push(tel, "/proc/version", "/tmp/telnut_pushed_cpuversion", PUSH_RAW, NULL, _cb_push, NULL);
 }
 
 static void

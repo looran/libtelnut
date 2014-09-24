@@ -1,4 +1,4 @@
-CFLAGS += -Wall -fPIC
+CFLAGS += -Wall -Werror -fPIC
 ifdef TFP_DATA_EXTERNAL_H
 	CFLAGS += -DTFP_DATA_EXTERNAL_H
 endif
@@ -26,7 +26,12 @@ install:
 	install -m 0644 $(HEADERS) $(INCLUDEDIR)
 
 dev:
-	export CFLAGS="-g -O0"; make clean && make && make -C tests && make -C examples && make -C bin/ && make -C tests run && sudo make install && sudo make -C bin/ install
+	export CFLAGS="-g -O0"; \
+		make clean && make -C b64otf/ clean && make -C b64otf/tests/ clean && \
+		make -C b64otf/ && make && \
+		make -C b64otf/tests/ && make -C tests/ && make -C examples/ && make -C bin/ && \
+		make -C b64otf/tests/ run && make -C tests run && \
+		sudo make install && sudo make -C bin/ install
 
 clean:
 	rm -f $(TARGET) $(OBJECTS)

@@ -91,12 +91,16 @@ Push mechanism
 ---------------------------
 Push plain
 
+MODE_RAW
+
 ---------------------------
 Push base64 decode awk/sh
 
+MODE_B64
 encode on the fly
 
 ---------------------------
 Push base64 decode custom
 
+MODE_B64_NATIVE
 for big binaries, because decode awk/sh is Slow.

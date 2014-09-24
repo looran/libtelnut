@@ -27,9 +27,16 @@ b64e_new(char *srcfileplain, int buf64len)
 {
 	struct b64e *be;
 
+	if (buf64len < 72)
+		return NULL;
 	be = calloc(1, sizeof(struct b64e));
 	be->buf64len = buf64len;
-	be->filebuflen = (((buf64len-1) / 4) * 3); /* -1 because we add \0 at end of buf64 */
+	/* filebuflen is the size of plaintext we fit in buf64len */
+	be->filebuflen = ((((buf64len-(1+(buf64len/72))) / 4) * 3) /54) *54; 
+	/*               1 : because we add \0 at end of buf64
+	 *               buf64len/72 : newlines
+	 *               /4*3 : 3/4 ratio rounded to lowest
+	 *               /54*54: read only full lines, 54plain = 72b64 */
 	be->filebuf = malloc(sizeof(unsigned char) * be->filebuflen);
 	be->file = fopen(srcfileplain, "rb");
 	if (!be->file)
@@ -64,19 +71,26 @@ int
 _b64enc(unsigned char *buf64, unsigned char *bufplain, int lenplain)
 {
 	unsigned char *bpos, *ppos, *pend;
+	int linelen;
 
 	bpos = buf64;
 	ppos = bufplain;
 	pend = bufplain + lenplain;
+	linelen = 0;
 	while (pend - ppos >= 3) {
 		*bpos++ = _base64_table[ppos[0] >> 2];
 		*bpos++ = _base64_table[((ppos[0] & 0x03) << 4) | (ppos[1] >> 4)];
 		*bpos++ = _base64_table[((ppos[1] & 0x0f) << 2) | (ppos[2] >> 6)];
 		*bpos++ = _base64_table[ppos[2] & 0x3f];
 		ppos += 3;
+		linelen += 4;
+		if (linelen >= 72) {
+			*bpos++ = '\n';
+			linelen = 0;
+		}
 	}
 	if (pend - ppos) {
-		/* happends only when reaching eof */
+		/* happends only when reaching eof, incomplete read */
 		*bpos++ = _base64_table[ppos[0] >> 2];
 		if (pend - ppos == 1) {
 			*bpos++ = _base64_table[(ppos[0] & 0x03) << 4];
@@ -86,6 +100,9 @@ _b64enc(unsigned char *buf64, unsigned char *bufplain, int lenplain)
 			*bpos++ = _base64_table[(ppos[1] & 0x0f) << 2];
 		}
 		*bpos++ = '=';
+		linelen += 4;
+		if (linelen)
+			*bpos++ = '\n';
 	}
 	*bpos = '\0';
 

@@ -3,7 +3,7 @@
 #include <telnut.h>
 
 static void
-_cb_exec(struct telnut *tel, enum telnut_error error, char *cmd, char *output, int output_len, void *arg)
+_cb_exec(struct telnut *tel, enum telnut_error error, char *output, int output_len, void *arg)
 {
 	if (error != TELNUT_NOERROR)
 		telnut_err_print(error);

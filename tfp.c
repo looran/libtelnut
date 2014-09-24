@@ -38,7 +38,8 @@ static enum tfp_action _console(struct tfp *, const char **, int *);
 static enum tfp_action _shell(struct tfp *, const char **, int *);
 static int _regcmp(struct tfp *, char *, char *, int);
 
-#define LOG_VERBOSE(parg, ...) do { if (tfp->conf.verbose) { printf("telnut_tfp: " parg, ##__VA_ARGS__); } } while(0);
+#define LOG_VERBOSE(parg, ...) do { if (tfp->conf.verbose >= 1) { printf(parg, ##__VA_ARGS__); } } while(0);
+#define LOG_DEBUG(parg, ...) do { if (tfp->conf.verbose >= 2) { printf("telnut_tfp: " parg, ##__VA_ARGS__); } } while(0);
 
 struct tfp *
 tfp_new(char *user, char *pass, int verbose)
@@ -71,9 +72,10 @@ tfp_getaction(struct tfp *tfp, char *recv, int recv_len, const char **cmd, int *
 {
 	enum tfp_action action;
 
-	LOG_VERBOSE("tfp_getaction: state=%d\n", tfp->state);
+	LOG_DEBUG("tfp_getaction: state=%d\n", tfp->state);
 	switch (tfp->state) {
 	case TFP_STATE_LOGIN_USER:
+		LOG_VERBOSE("[-] Logging in\n");
 		tfp->learn.login_user = strndup(recv, recv_len);
 		action = _login(tfp, cmd, cmdlen);
 		break;
@@ -82,6 +84,7 @@ tfp_getaction(struct tfp *tfp, char *recv, int recv_len, const char **cmd, int *
 		action = _login(tfp, cmd, cmdlen);
 		break;
 	case TFP_STATE_CONSOLE:
+		LOG_VERBOSE("[-] Getting shell\n");
 		if (tfp->learn.login_console)
 			free(tfp->learn.login_console);
 		tfp->learn.login_console = strndup(recv, recv_len);
@@ -195,7 +198,7 @@ _console(struct tfp *tfp, const char **cmd, int *cmdlen)
 	if (_login_hasfailed(tfp, cmd, cmdlen))
 		return TFP_ERROR;
 
-	LOG_VERBOSE("_console\n");
+	LOG_DEBUG("_console\n");
 	lastmatch = NULL;
 	for (i=0; i<TFP_CONSOLES_COUNT; i++) {
 		console = &_consoles[i];
@@ -251,19 +254,19 @@ _regcmp(struct tfp *tfp, char *str, char *regstr, int cflags)
 
         res = regcomp(&reg, regstr, cflags | REG_EXTENDED);
         if (res) {
-		LOG_VERBOSE("_regcmp: regcomp FAILS on %s (%d)\n", regstr, res);
+		LOG_DEBUG("_regcmp: regcomp FAILS on %s (%d)\n", regstr, res);
 		return -1;
 	}
         res = regexec(&reg, str, 0, NULL, 0);
         if( !res ){
-                LOG_VERBOSE("_regcmp: MATCH : %s --- %s\n", str, regstr);
+                LOG_DEBUG("_regcmp: MATCH : %s --- %s\n", str, regstr);
         }
         else if( res == REG_NOMATCH ){
-                LOG_VERBOSE("_regcmp: NO MATCH : %s --- %s\n", str, regstr);
+                LOG_DEBUG("_regcmp: NO MATCH : %s --- %s\n", str, regstr);
         }
         else{
                 regerror(res, &reg, errbuf, sizeof(errbuf));
-		LOG_VERBOSE("_regcmp: match FAILS %s --- %s: %s\n", str, regstr, errbuf);
+		LOG_DEBUG("_regcmp: match FAILS %s --- %s: %s\n", str, regstr, errbuf);
         }
 	regfree(&reg);
 

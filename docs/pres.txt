@@ -1,0 +1,45 @@
+1. Telnet usage in the wild
+2. Telnet background
+3. Implementation
+4. Cross compile
+
+=== Telnet usage in the wild
+
+Mainly on embeded devices, but also on 'real' servers, many in telco and
+banking.
+* ADSL routers
+* TV set-top boxes
+* IP routers
+* firewalls
+* HLR...
+
+But on embeded, sometimes it's the only shell access.
+
+Many are running Linux, it's what we are targeting here
+	mainly busybox based http://www.busybox.net/
+Some others (Mikrotix RouterOS, Draytek DrayOS, ...)
+
+=== Telnet background
+
+TELNET: The Mother of All (Application) Protocols
+http://www.ics.uci.edu/~rohit/IEEE-L7-v2.html
+
+=== Implementation
+
+Slow sending, humanoid like
+You do not always directly have a shell
+	Execute commands
+	Fingerprinting necessary
+Binary push
+	base64 shell/awk decoder integrated, to boostrap
+	optionnal 2 steps decoding with native base64 decoder (faster)
+Echo issue
+	Most telnet servers do echo by default, so you will get back what you send
+	Telnet protocol IAC DON'T ECHO option is ignored by many telnet servers
+	Implementation of echo canceler, disabled for now, needs love
+
+=== Cross compile
+
+Using buildroot (recommended)
+
+Using crossdev (gentoo)

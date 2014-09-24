@@ -14,6 +14,9 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#ifndef _TELNUT_H
+#define _TELNUT_H
+
 #include <stdio.h>
 #include <sys/stat.h>
 #include <stdlib.h>
@@ -51,6 +54,7 @@ enum telnut_error {
 	TELNUT_ERROR_CONNECTION_CLOSED,
 	TELNUT_ERROR_LOGIN,
 	TELNUT_ERROR_SHELL,
+	TELNUT_ERROR_PUSH_LOCALFILENOTFOUND,
 	TELNUT_ERROR_TELNETPROTO,
 };
 
@@ -59,6 +63,28 @@ enum telnut_action {
 	TELNUT_ACTION_EXEC = 1,
 	TELNUT_ACTION_PUSH = 2,
 	TELNUT_ACTION_INTERACTIVE = 3,
+};
+
+enum telnut_push_mode { /* internal index for _push_steps[][] defined in telnut.c */
+	TELNUT_PUSH_MODE_RAW = 0,
+	TELNUT_PUSH_MODE_RAW_DECNAT = 1,
+	TELNUT_PUSH_MODE_B64 = 2,
+	TELNUT_PUSH_MODE_B64_DECNAT = 3,
+};
+
+enum telnut_encoder {
+	PUSH_RAW,
+	PUSH_B64,
+};
+
+enum telnut_push_step {
+	TELNUT_PUSH_DONE = 0,
+	TELNUT_PUSH_UNINITIALIZED = 1,
+	TELNUT_PUSH_1_PUSHDEC1L,
+	TELNUT_PUSH_2_PUSHDECNAT,
+	TELNUT_PUSH_3_RMDEC1L,
+	TELNUT_PUSH_4_PUSHFILE,
+	TELNUT_PUSH_5_RMDECNAT,
 };
 
 enum tfp_state {
@@ -102,24 +128,38 @@ struct telnut {
 	void (*cbusr_connect)(struct telnut *, void *);
 	void (*cbusr_disconnect)(struct telnut *, enum telnut_error, void *);
 	void *cbusr_arg;
-	union {
+	struct {
 		struct {
 			struct event *stdin;
 		} interactive;
 		struct {
 			char *cmd;
-			void (*cbusr_done)(struct telnut *, enum telnut_error, char *, char *, int, void *);
+			void (*cbusr_done)(struct telnut *, enum telnut_error, char *, int, void *);
 		} exec;
 		struct {
-			char *path_local;
-			char *path_remote;
-			FILE *file;
-			struct stat fileinfo;
-			char *filebuf;
-			int filebuf_size;
-			int filebuf_remaining;
+			char                 *path_local;
+			char                 *path_local_decnat;
+			char                 *path_remote;
+			char                 *path_remotedir;
+			char                 *path_remotebase;
+			char                 *path_remote_dec1l;
+			char                 *path_remote_decnat;
+			enum telnut_encoder   encoder;
+			char                 *decoder;
+			enum telnut_push_mode mode;
 			void (*cbusr_done)(struct telnut *, enum telnut_error, void *);
+			enum telnut_push_step step;
 		} push;
+		struct {
+			char       *path_local; /* no alloc */
+			char       *path_remote; /* no alloc */
+			struct b64e *be;
+			FILE       *file;
+			struct stat fileinfo;
+			unsigned char *filebuf;
+			int         filebuf_size;
+			int         filebuf_remaining;
+		} pushstep;
 	} act;
 	void *act_cbusr_arg;
 	struct {
@@ -214,8 +254,8 @@ void telnut_err_print(enum telnut_error error);
 
 int telnut_interactive(struct telnut *tel);
 int telnut_exec(struct telnut *tel, char *cmd, 
-	void (*cbusr_done)(struct telnut *, enum telnut_error, char *, char *, int, void *), void *cbusr_arg);
-int telnut_push(struct telnut *tel, char *path_local, char *path_remote,
+	void (*cbusr_done)(struct telnut *, enum telnut_error, char *, int, void *), void *cbusr_arg);
+int telnut_push(struct telnut *tel, char *path_local, char *path_remote, enum telnut_encoder encoder, char *decoder,
 	void (*cbusr_done)(struct telnut *, enum telnut_error, void *), void *cbusr_arg);
 void telnut_action_stop(struct telnut *tel);
 
@@ -225,3 +265,5 @@ struct tfp     *tfp_new(char *user, char *pass, int verbose);
 void            tfp_free(struct tfp *tfp);
 enum tfp_action tfp_getaction(struct tfp *tfp, char *recv, int recv_len, const char **cmd, int *cmdlen);
 const char     *tfp_str(struct tfp *tfp);
+
+#endif /* _TELNUT_H */
