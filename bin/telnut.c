@@ -140,6 +140,7 @@ _action(struct telnut *tel)
 static void
 _cb_connect(struct telnut *tel, void *arg)
 {
+	printf("[*] Connected\n");
 	_action(tel);
 }
 

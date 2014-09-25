@@ -151,7 +151,7 @@ telnut_connect(struct telnut *tel)
 	unsigned long hostaddr;
 	struct sockaddr_in sin;
 	
-	LOG_VERBOSE("[-] Connecting\n");
+	LOG_VERBOSE("[+] Connecting to \"%s\"\n", tel->conf.ip);
 	hostaddr = inet_addr(tel->conf.ip);
 	sin.sin_family = AF_INET;
 	sin.sin_port = htons(tel->conf.port);
@@ -217,7 +217,7 @@ telnut_err_print(enum telnut_error error)
 int
 telnut_interactive(struct telnut *tel)
 {
-	LOG_VERBOSE("[-] Interactive shell\n");
+	LOG_VERBOSE("[+] Action: Interactive shell\n");
 	tel->action = TELNUT_ACTION_INTERACTIVE;
 	tel->state = TELNUT_STATE_INTERACTIVE;
 	fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK);
@@ -231,7 +231,7 @@ int
 telnut_exec(struct telnut *tel, char *cmd, 
 	void (*cbusr_done)(struct telnut *, enum telnut_error, char *, int, void *), void *cbusr_arg)
 {
-	LOG_VERBOSE("[-] Execute %s\n", cmd);
+	LOG_VERBOSE("[+] Action: Execute \"%s\"\n", cmd);
 	tel->action = TELNUT_ACTION_EXEC;
 	tel->act.exec.cbusr_done = cbusr_done;
 	tel->act_cbusr_arg = cbusr_arg;
@@ -243,7 +243,7 @@ int
 telnut_push(struct telnut *tel, char *path_local, char *path_remote, enum telnut_encoder encoder, char *decoder,
 	void (*cbusr_done)(struct telnut *, enum telnut_error, void *), void *cbusr_arg)
 {
-	LOG_VERBOSE("[-] Push %s\n", path_local);
+	LOG_VERBOSE("[+] Action: Push file \"%s\"\n", path_local);
 	tel->action = TELNUT_ACTION_PUSH;
 	tel->act.push.path_local = strdup(path_local);
 	tel->act.push.path_remote = strdup(path_remote);
@@ -341,7 +341,7 @@ _push_step(struct telnut *tel)
 		telnut_action_stop(tel);
 		break;
 	case TELNUT_PUSH_1_PUSHDEC1L:
-		LOG_VERBOSE("[-] Push internal base64 decoder in RAW\n");
+		LOG_VERBOSE("[-] Push shell base64 decoder (RAW)\n");
 		snprintf(buf, sizeof(buf), "%s/.%se",
 			tel->act.push.path_remotedir, tel->act.push.path_remotebase);
 		tel->act.push.path_remote_dec1l = strdup(buf);
@@ -357,7 +357,7 @@ _push_step(struct telnut *tel)
 		tel->act.pushstep.path_remote = tel->act.push.path_remote_decnat;
 		return _push_file_init(tel, PUSH_B64, tel->act.push.path_remote_dec1l);
 	case TELNUT_PUSH_3_RMDEC1L:
-		LOG_VERBOSE("[-] Remove internal base64 decoder\n");
+		LOG_VERBOSE("[-] Remove shell base64 decoder\n");
 		snprintf(buf, sizeof(buf), "rm -f %s", tel->act.push.path_remote_dec1l);
 		return _exec(tel, buf);
 	case TELNUT_PUSH_4_PUSHFILE:
@@ -404,7 +404,7 @@ _push_file_init(struct telnut *tel, enum telnut_encoder encoder, char *pipe_deco
 	if (tel->act.pushstep.path_local) {
 		switch (encoder) {
 		case PUSH_RAW:
-			LOG_VERBOSE("RAW\n");
+			LOG_VERBOSE("(RAW)\n");
 			tel->act.pushstep.file = fopen(tel->act.pushstep.path_local, "rb");
 			if (!tel->act.pushstep.file) {
 				tel->error = TELNUT_ERROR_PUSH_LOCALFILENOTFOUND;
@@ -414,7 +414,7 @@ _push_file_init(struct telnut *tel, enum telnut_encoder encoder, char *pipe_deco
 			tel->act.pushstep.filebuf = malloc(TELNUT_FILEBUF_SIZE * sizeof(char));
 			break;
 		case PUSH_B64:
-			LOG_VERBOSE("using on-the-fly base64 encoder\n");
+			LOG_VERBOSE("(BASE64 on-the-fly)\n");
 			tel->act.pushstep.be = b64e_new(tel->act.push.path_local, TELNUT_BEBUF_SIZE);
 			if (!tel->act.pushstep.be) {
 				tel->error = TELNUT_ERROR_PUSH_LOCALFILENOTFOUND;

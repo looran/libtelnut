@@ -1,25 +1,7 @@
 libtelnut - telnet async client library
 =======================================
 
-### Telnut binary
-
-```bash
-$ telnut
-usage: telnut [-v] [-p port] (-i | -e command | -c file_path [-C path_remote]) ip username [password]
-
-$ telnut -e "uname -ap" 192.168.0.1 admin 1234
-[-] Connected !
-[-] Executing uname -ap
-[*] uname -ap
-Linux ADSLRouter 2.6.18 #30 Fri Mar 14 23:44:39 CST 2011 mips unknown
-
-$ telnut -c myfile 192.168.0.1 admin 1234
-[-] Connected !
-[-] Pushing myfile
-[*] File pushed successfuly !
-```
-
-### libtelnut Example: execute a command via Telnet
+### Example: execute a command via Telnet
 
 ```
 #include <stdio.h>
@@ -77,6 +59,15 @@ make -C examples/ && sudo ./examples/exec
 Source code of this example: [examples/exec.c](examples/exec.c)
 
 Other example, push a file to the remote host: [examples/push.c](examples/push.c)
+
+### Telnut binary
+
+```bash
+$ telnut
+usage: telnut [-hv] [-p port]
+              (-i | -e command | -c path_local [-C path_remote] [-r] [-d decoder_path])
+	                    ip username [password]
+```
 
 ### Install
 

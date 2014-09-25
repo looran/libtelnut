@@ -84,11 +84,13 @@ tfp_getaction(struct tfp *tfp, char *recv, int recv_len, const char **cmd, int *
 		action = _login(tfp, cmd, cmdlen);
 		break;
 	case TFP_STATE_CONSOLE:
-		LOG_VERBOSE("[-] Getting shell\n");
 		if (tfp->learn.login_console)
 			free(tfp->learn.login_console);
 		tfp->learn.login_console = strndup(recv, recv_len);
 		action = _console(tfp, cmd, cmdlen);
+		if (tfp->console)
+			LOG_VERBOSE("[-] Fingerprinted as \"%s\"\n", tfp->console->name);
+		LOG_VERBOSE("[-] Getting shell\n");
 		break;
 	case TFP_STATE_CHECK_SHELL:
 		tfp->learn.shell_prompt = strndup(recv, recv_len);
