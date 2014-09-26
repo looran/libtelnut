@@ -44,7 +44,7 @@ enum telnut_state {
 	TELNUT_STATE_EXEC_WAITANSWER,
 	TELNUT_STATE_PUSH_CAT,
 	TELNUT_STATE_PUSH_SEND,
-	TELNUT_STATE_PUSH_CTRLC,
+	TELNUT_STATE_PUSH_WAITPROMPT,
 };
 
 enum telnut_error {
@@ -246,16 +246,16 @@ struct tfp_creds {
 struct telnut *telnut_new(struct event_base *evb, char *ip, int port, char *user, char *pass, enum telnut_reconnect reconnect, int verbose,
 	void (*cbusr_connect)(struct telnut *, void *),
 	void (*cbusr_disconnect)(struct telnut *, enum telnut_error, void *), void *arg);
-void           telnut_free(struct telnut *tel);
+void telnut_free(struct telnut *tel);
 
 int  telnut_connect(struct telnut *tel);
 int  telnut_disconnect(struct telnut *tel);
 void telnut_err_print(enum telnut_error error);
 
-int telnut_interactive(struct telnut *tel);
-int telnut_exec(struct telnut *tel, char *cmd, 
+int  telnut_interactive(struct telnut *tel);
+int  telnut_exec(struct telnut *tel, char *cmd, 
 	void (*cbusr_done)(struct telnut *, enum telnut_error, char *, int, void *), void *cbusr_arg);
-int telnut_push(struct telnut *tel, char *path_local, char *path_remote, enum telnut_encoder encoder, char *decoder,
+int  telnut_push(struct telnut *tel, char *path_local, char *path_remote, enum telnut_encoder encoder, char *decoder,
 	void (*cbusr_done)(struct telnut *, enum telnut_error, void *), void *cbusr_arg);
 void telnut_action_stop(struct telnut *tel);
 
@@ -264,6 +264,7 @@ void telnut_action_stop(struct telnut *tel);
 struct tfp     *tfp_new(char *user, char *pass, int verbose);
 void            tfp_free(struct tfp *tfp);
 enum tfp_action tfp_getaction(struct tfp *tfp, char *recv, int recv_len, const char **cmd, int *cmdlen);
+int		tfp_hasprompt(struct tfp *tfp, char *buf);
 const char     *tfp_str(struct tfp *tfp);
 
 #endif /* _TELNUT_H */

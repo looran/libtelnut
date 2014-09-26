@@ -94,7 +94,7 @@ static int  _s_connected(struct telnut *);
 static int  _s_exec_waitanswer(struct telnut *);
 static int  _s_push_cat(struct telnut *);
 static int  _s_push_send(struct telnut *);
-static int  _s_push_ctrlc(struct telnut *);
+static int  _s_push_waitprompt(struct telnut *);
 static void _error(struct telnut *, enum telnut_error, int);
 static void _wait(struct telnut *, float);
 static void _send(struct telnut *, const char *, size_t, int);
@@ -463,7 +463,7 @@ _state(struct telnut *tel)
 	case TELNUT_STATE_EXEC_WAITANSWER: rc=_s_exec_waitanswer(tel); break;
 	case TELNUT_STATE_PUSH_CAT: rc=_s_push_cat(tel); break;
 	case TELNUT_STATE_PUSH_SEND: rc=_s_push_send(tel); break;
-	case TELNUT_STATE_PUSH_CTRLC: rc=_s_push_ctrlc(tel); break;
+	case TELNUT_STATE_PUSH_WAITPROMPT: rc=_s_push_waitprompt(tel); break;
 	}
 	if (rc == -1)
 		_state_next(tel, tel->state);
@@ -492,7 +492,7 @@ _state_next(struct telnut *tel, enum telnut_state state)
 	case TELNUT_STATE_CONNECTING:
 	case TELNUT_STATE_EXEC_WAITANSWER:
 	case TELNUT_STATE_PUSH_CAT:
-	case TELNUT_STATE_PUSH_CTRLC:
+	case TELNUT_STATE_PUSH_WAITPROMPT:
 		if (statechange)
 			_recvbuf_init(tel);
 		_wait(tel, 0.2);
@@ -576,7 +576,7 @@ _s_push_send(struct telnut *tel)
 {
 	unsigned char *filebuf_start;
 
-	if (tel->act.push.step == TELNUT_PUSH_1_PUSHDEC1L) {
+	if (tel->act.push.step == TELNUT_PUSH_1_PUSHDEC1L) { /* not local file based */
 		if (!tel->act.pushstep.filebuf_remaining) {
 			bufferevent_write(tel->conn.bufev, _b64_dec1l, strlen(_b64_dec1l));
 			bufferevent_write(tel->conn.bufev, "\r\n", 2);
@@ -585,10 +585,9 @@ _s_push_send(struct telnut *tel)
 			bufferevent_write(tel->conn.bufev, "\r\n", 2);
 			bufferevent_write(tel->conn.bufev, CTRL_D, 1);
 			bufferevent_write(tel->conn.bufev, "\r\n", 2);
-			// _send(tel, CTRL_C, 1, 1);
-			return TELNUT_STATE_PUSH_CTRLC;
+			return TELNUT_STATE_PUSH_WAITPROMPT;
 		}
-	} else {
+	} else {					    /* local file based */
 		if (!tel->act.pushstep.filebuf_remaining) {
 			if (tel->act.pushstep.be)
 				tel->act.pushstep.filebuf_size = b64e_read(tel->act.pushstep.be,
@@ -601,8 +600,9 @@ _s_push_send(struct telnut *tel)
 		if (tel->act.pushstep.filebuf_remaining <= 0) { /* EOF */
 			bufferevent_write(tel->conn.bufev, "\r\n", 2);
 			bufferevent_write(tel->conn.bufev, CTRL_D, 1);
-			// _send(tel, CTRL_C, 1, 1);
-			return TELNUT_STATE_PUSH_CTRLC;
+			if (tel->act.pushstep.be)
+				LOG_VERBOSE("[-] Push done, waiting for decoding to finish\n");
+			return TELNUT_STATE_PUSH_WAITPROMPT;
 		}
 		filebuf_start = (tel->act.pushstep.filebuf + tel->act.pushstep.filebuf_size) - tel->act.pushstep.filebuf_remaining;
 		if (!bufferevent_write(tel->conn.bufev, filebuf_start, tel->act.pushstep.filebuf_remaining))
@@ -612,14 +612,16 @@ _s_push_send(struct telnut *tel)
 }
 
 static int
-_s_push_ctrlc(struct telnut *tel)
+_s_push_waitprompt(struct telnut *tel)
 {
 	char buf[200];
 
 	if (!_recvbuf(tel)) {
-		// XXX check we got prompt
-		snprintf(buf, sizeof(buf), "chmod 700 %s", tel->act.pushstep.path_remote);
-		return _exec(tel, buf);
+		if (!tfp_hasprompt(tel->conn.tfp, (char *)evbuffer_pullup(tel->recvbuf.in, -1))) {
+			snprintf(buf, sizeof(buf), "chmod 700 %s", tel->act.pushstep.path_remote);
+			return _exec(tel, buf);
+		}
+		_recvbuf_init(tel);
 	}
 	return -1;
 }
@@ -722,7 +724,7 @@ _cb_sock_write(struct bufferevent *bev, void *ctx)
 	case TELNUT_STATE_INTERACTIVE:
 	case TELNUT_STATE_EXEC_WAITANSWER:
 	case TELNUT_STATE_PUSH_CAT:
-	case TELNUT_STATE_PUSH_CTRLC:
+	case TELNUT_STATE_PUSH_WAITPROMPT:
 		return;
 	case TELNUT_STATE_PUSH_SEND:
 		_state(tel);

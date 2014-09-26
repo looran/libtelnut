@@ -104,6 +104,16 @@ tfp_getaction(struct tfp *tfp, char *recv, int recv_len, const char **cmd, int *
 	return action;
 }
 
+int
+tfp_hasprompt(struct tfp *tfp, char *buf)
+{
+	if ( (tfp->console->fpshell.shell && !_regcmp(tfp, buf, tfp->console->fpshell.shell, tfp->console->fpshell.shell_cflags))
+	     || (tfp->console->login.console && !_regcmp(tfp, buf, tfp->console->login.console, tfp->console->login.console_cflags)) )
+		return 0;
+
+	return -1;
+}
+
 const char *
 tfp_str(struct tfp *tfp)
 {
@@ -236,8 +246,7 @@ _shell(struct tfp *tfp, const char **cmd, int *cmdlen)
 {
 	enum tfp_action action;
 
-	if ( (tfp->console->fpshell.shell && !_regcmp(tfp, tfp->learn.shell_prompt, tfp->console->fpshell.shell, tfp->console->fpshell.shell_cflags))
-	     || (tfp->console->login.console && !_regcmp(tfp, tfp->learn.shell_prompt, tfp->console->login.console, tfp->console->login.console_cflags)) ) {
+	if (!tfp_hasprompt(tfp, tfp->learn.shell_prompt)) {
 		tfp->state = TFP_STATE_SHELL;
 		action = TFP_HAS_SHELL;
 	} else {
